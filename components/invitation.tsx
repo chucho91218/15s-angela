@@ -11,18 +11,29 @@ import {
   Copy,
   ExternalLink,
   MapPin,
-  MessageCircle,
   Music,
+  NotebookPen,
   Snowflake,
   Sparkles,
+  Ticket,
   VolumeX,
   X,
   Minus,
   Plus,
   User,
   Utensils,
-  Flower2,
 } from 'lucide-react'
+import { submitConfirmation } from '@/app/actions'
+import {
+  DIETARY_OPTIONS,
+  GUEST_TYPE_LABELS,
+  MAX_GUESTS,
+  MAX_NAME_LENGTH,
+  MAX_NOTES_LENGTH,
+  NO_RESTRICTION,
+  type Guest,
+  type GuestType,
+} from '@/lib/rsvp'
 
 const photos = [
   'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=900&q=85',
@@ -53,41 +64,142 @@ function Reveal({
   )
 }
 
+const MUSIC_VIDEO_ID = 'Vi95a4wS30Q'
+const MUSIC_VOLUME = 40
+const YOUTUBE_PLAYING = 1
+const YOUTUBE_BUFFERING = 3
+
+type YouTubePlayer = {
+  playVideo(): void
+  pauseVideo(): void
+  setVolume(volume: number): void
+  getIframe(): HTMLIFrameElement
+  destroy(): void
+}
+
+type YouTubeApi = {
+  Player: new (
+    element: HTMLElement,
+    options: {
+      width: number
+      height: number
+      videoId: string
+      playerVars: Record<string, string | number>
+      events: {
+        onReady: (event: { target: YouTubePlayer }) => void
+        onStateChange: (event: { data: number }) => void
+        onError: () => void
+      }
+    },
+  ) => YouTubePlayer
+}
+
+declare global {
+  interface Window {
+    YT?: YouTubeApi
+    onYouTubeIframeAPIReady?: () => void
+  }
+}
+
+let youTubeApi: Promise<YouTubeApi> | undefined
+
+function loadYouTubeApi() {
+  youTubeApi ??= new Promise<YouTubeApi>((resolve, reject) => {
+    window.onYouTubeIframeAPIReady = () => resolve(window.YT as YouTubeApi)
+    const script = document.createElement('script')
+    script.src = 'https://www.youtube.com/iframe_api'
+    script.onerror = () => {
+      youTubeApi = undefined
+      reject(new Error('No se pudo cargar el reproductor de YouTube'))
+    }
+    document.head.appendChild(script)
+  })
+  return youTubeApi
+}
+
+// DEBT: música servida por YouTube porque no hay un archivo con licencia para alojar.
+// Techo: el reproductor va oculto (YouTube pide que sea visible), puede mostrar
+// publicidad y iOS puede bloquear el inicio. Camino de upgrade: con un MP3 propio,
+// volver a un elemento <audio> y borrar este reproductor.
 export function FloatingAudio({ entered }: { entered: boolean }) {
   const [isPlaying, setIsPlaying] = useState(false)
-  const audioRef = useRef<HTMLAudioElement>(null)
+  const [unavailable, setUnavailable] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const playerRef = useRef<YouTubePlayer | null>(null)
 
   useEffect(() => {
-    if (entered && audioRef.current) {
-      audioRef.current.volume = 0.4
-      audioRef.current.currentTime = 29
-      audioRef.current.play().then(() => setIsPlaying(true)).catch(() => console.warn('Autoplay bloqueado por el navegador'))
+    if (!entered) return
+
+    let cancelled = false
+    let player: YouTubePlayer | undefined
+    // YouTube reemplaza este elemento por su iframe, así que React no debe manejarlo.
+    const host = document.createElement('div')
+    containerRef.current?.appendChild(host)
+
+    loadYouTubeApi()
+      .then((api) => {
+        if (cancelled) return
+        player = new api.Player(host, {
+          width: 200,
+          height: 200,
+          videoId: MUSIC_VIDEO_ID,
+          playerVars: {
+            controls: 0,
+            disablekb: 1,
+            fs: 0,
+            loop: 1,
+            playlist: MUSIC_VIDEO_ID,
+            playsinline: 1,
+            rel: 0,
+          },
+          events: {
+            onReady: ({ target }) => {
+              playerRef.current = target
+              target.getIframe().tabIndex = -1
+              target.setVolume(MUSIC_VOLUME)
+              target.playVideo()
+            },
+            onStateChange: ({ data }) =>
+              setIsPlaying(data === YOUTUBE_PLAYING || data === YOUTUBE_BUFFERING),
+            onError: () => {
+              setIsPlaying(false)
+              setUnavailable(true)
+            },
+          },
+        })
+      })
+      .catch(() => setUnavailable(true))
+
+    return () => {
+      cancelled = true
+      playerRef.current = null
+      player?.destroy()
+      host.remove()
     }
   }, [entered])
 
   const toggleAudio = () => {
-    if (!audioRef.current) return
-    if (isPlaying) {
-      audioRef.current.pause()
-    } else {
-      audioRef.current.play()
-    }
-    setIsPlaying(!isPlaying)
+    if (isPlaying) playerRef.current?.pauseVideo()
+    else playerRef.current?.playVideo()
   }
 
   return (
     <>
-      <audio ref={audioRef} loop src="/hello.mp3" /> 
-      
+      <div
+        ref={containerRef}
+        aria-hidden="true"
+        className="pointer-events-none fixed bottom-0 right-0 -z-50 h-[200px] w-[200px] opacity-0"
+      />
+
       <AnimatePresence>
-        {entered && (
+        {entered && !unavailable && (
           <motion.button
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.8, delay: 1 }}
             onClick={toggleAudio}
             className="fixed bottom-6 right-6 z-50 flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-black/40 text-white backdrop-blur-md transition-all hover:scale-105 hover:border-[#ff4d9d]/40 hover:bg-[#ff4d9d]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4d9d]"
-            aria-label="Toggle music"
+            aria-label={isPlaying ? 'Pausar música' : 'Reproducir música'}
           >
             {isPlaying ? (
               <Music size={18} className="animate-pulse text-[#ff83ba]" />
@@ -174,9 +286,11 @@ export function InvitationShell({ onEnter }: { onEnter: () => void }) {
   )
 }
 
+const BEAR_RATIO = 1280 / 1217
+
 export function ClubBackdrop() {
   const lights = Array.from({ length: 8 })
-  const flowers = Array.from({ length: 4 })
+  const bears = Array.from({ length: 4 })
 
   return (
     <div className="pointer-events-none fixed inset-0 -z-30 overflow-hidden bg-[#080205] transform-gpu">
@@ -185,10 +299,10 @@ export function ClubBackdrop() {
       <div className="absolute -left-28 top-20 h-96 w-96 rounded-full bg-[radial-gradient(circle,rgba(255,42,133,0.15)_0%,transparent_70%)] will-change-transform" />
       <div className="absolute -right-28 top-1/3 h-[28rem] w-[28rem] rounded-full bg-[radial-gradient(circle,rgba(74,4,31,0.3)_0%,transparent_70%)] will-change-transform" />
       
-      {flowers.map((_, i) => (
+      {bears.map((_, i) => (
         <motion.div
-          key={`flower-${i}`}
-          className="absolute text-[#ff2a85]/15 will-change-transform"
+          key={`bear-${i}`}
+          className="absolute opacity-25 will-change-transform"
           style={{
             left: `${15 + i * 25}%`,
             top: `${15 + (i * 35) % 65}%`,
@@ -204,7 +318,12 @@ export function ClubBackdrop() {
             delay: i * 0.5,
           }}
         >
-          <Flower2 size={80 + (i * 35)} strokeWidth={1.5} />
+          <img
+            src="/oso-fondo.png"
+            alt=""
+            width={100 + i * 45}
+            height={Math.round((100 + i * 45) * BEAR_RATIO)}
+          />
         </motion.div>
       ))}
 
@@ -375,6 +494,45 @@ export function EventDetails() {
   )
 }
 
+const cardPrices = [
+  { label: 'Mayores', value: '$75.000' },
+  { label: 'Adolescentes', value: '$45.000' },
+  { label: 'Menores', value: '$35.000' },
+  { label: 'Brindis', value: '$30.000' },
+]
+
+export function CardPrices() {
+  return (
+    <section className="px-6 py-24 sm:py-36">
+      <div className="mx-auto max-w-xl">
+        <Reveal className="text-center">
+          <p className="text-xs font-medium uppercase tracking-[0.38em] text-[#ff83ba]">
+            Tarjeta
+          </p>
+          <h2 className="mt-3 font-serif text-4xl text-white sm:text-6xl">
+            Valor de la tarjeta
+          </h2>
+        </Reveal>
+
+        <Reveal className="mt-12">
+          <dl className="rounded-3xl border border-white/10 bg-black/40 px-6 backdrop-blur-md sm:px-8">
+            {cardPrices.map(({ label, value }) => (
+              <div
+                key={label}
+                data-card-price
+                className="flex items-baseline justify-between gap-4 border-b border-white/10 py-5 last:border-b-0"
+              >
+                <dt className="text-base text-white/85">{label}</dt>
+                <dd className="font-serif text-2xl text-white sm:text-3xl">{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </Reveal>
+      </div>
+    </section>
+  )
+}
+
 export function Gallery() {
   const [selected, setSelected] = useState<number | null>(null)
 
@@ -501,52 +659,93 @@ export function Gifts() {
   )
 }
 
+const emptyGuest = (): Guest => ({
+  name: '',
+  type: 'mayor',
+  dietary: NO_RESTRICTION,
+})
+
+const FIELD_LABEL_STYLES =
+  'mb-2 flex items-center gap-2 text-xs font-medium text-[#ff9fc8]'
+const FIELD_STYLES =
+  'w-full border-b border-white/30 bg-transparent py-2 text-base text-white placeholder:text-white/50 focus:border-[#ff4d9d] focus:outline-none'
+
 export function Rsvp() {
-  const [guestCount, setGuestCount] = useState(1)
-  const [guests, setGuests] = useState([
-    { name: '', dietary: 'Ninguna', song: '' },
-  ])
+  const [guests, setGuests] = useState<Guest[]>([emptyGuest()])
+  const [notes, setNotes] = useState('')
+  const [website, setWebsite] = useState('')
+  const [status, setStatus] = useState<'idle' | 'sending' | 'sent'>('idle')
+  const [error, setError] = useState('')
+  const resultRef = useRef<HTMLDivElement>(null)
+  const sectionRef = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    if (status === 'sent') {
+      resultRef.current?.scrollIntoView({ block: 'center' })
+    }
+  }, [status])
+
+  const resetForm = () => {
+    setGuests([emptyGuest()])
+    setNotes('')
+    setWebsite('')
+    setError('')
+    setStatus('idle')
+    // Se enfoca la sección y no un campo, para que no se abra el teclado del celular.
+    sectionRef.current?.focus({ preventScroll: true })
+    sectionRef.current?.scrollIntoView({ block: 'start' })
+  }
 
   const handleGuestCountChange = (delta: number) => {
-    const newCount = Math.max(1, Math.min(5, guestCount + delta))
-    setGuestCount(newCount)
-
-    if (newCount > guests.length) {
-      setGuests([
-        ...guests,
-        ...Array(newCount - guests.length).fill({
-          name: '',
-          dietary: 'Ninguna',
-          song: '',
-        }),
-      ])
-    } else if (newCount < guests.length) {
-      setGuests(guests.slice(0, newCount))
-    }
-  }
-
-  const updateGuest = (index: number, field: string, value: string) => {
-    const newGuests = [...guests]
-    newGuests[index] = { ...newGuests[index], [field]: value }
-    setGuests(newGuests)
-  }
-
-  const handleConfirm = () => {
-    let message = `Hola Ángela! Confirmo asistencia a tus 15 💖\n\n`
-    guests.forEach((g, i) => {
-      message += `*Invitado ${i + 1}*\n`
-      message += `Nombre: ${g.name || 'Sin especificar'}\n`
-      message += `Menú: ${g.dietary}\n`
-      if (g.song) message += `Canción: ${g.song}\n`
-      message += `\n`
+    setGuests((current) => {
+      const count = Math.max(1, Math.min(MAX_GUESTS, current.length + delta))
+      return count > current.length
+        ? [
+            ...current,
+            ...Array.from({ length: count - current.length }, emptyGuest),
+          ]
+        : current.slice(0, count)
     })
+  }
 
-    const encodedMessage = encodeURIComponent(message)
-    window.open(`https://wa.me/543573434007?text=${encodedMessage}`, '_blank')
+  const updateGuest = <Field extends keyof Guest>(
+    index: number,
+    field: Field,
+    value: Guest[Field],
+  ) => {
+    setGuests((current) =>
+      current.map((guest, position) =>
+        position === index ? { ...guest, [field]: value } : guest,
+      ),
+    )
+  }
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (status === 'sending') return
+    setStatus('sending')
+    setError('')
+    try {
+      const result = await submitConfirmation({ guests, notes, website })
+      if (result.ok) {
+        setStatus('sent')
+        return
+      }
+      setError(result.error)
+    } catch {
+      setError(
+        'No pudimos enviar tu confirmación. Revisá tu conexión e intentá de nuevo.',
+      )
+    }
+    setStatus('idle')
   }
 
   return (
-    <section className="px-6 py-24 sm:py-36">
+    <section
+      ref={sectionRef}
+      tabIndex={-1}
+      className="px-6 py-24 outline-none sm:py-36"
+    >
       <div className="mx-auto max-w-2xl">
         <Reveal className="text-center">
           <p className="text-xs font-medium uppercase tracking-[0.38em] text-[#ff83ba]">
@@ -557,108 +756,198 @@ export function Rsvp() {
           </h2>
         </Reveal>
 
-        <div className="mt-12 space-y-6">
-          <Reveal>
-            <div className="rounded-3xl border border-white/10 bg-black/40 p-6 text-center backdrop-blur-md sm:p-8">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#ff83ba]">
-                ¿Cuántas personas confirman?
-              </p>
-              <div className="mt-6 flex items-center justify-center gap-6">
-                <button
-                  onClick={() => handleGuestCountChange(-1)}
-                  disabled={guestCount <= 1}
-                  className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 text-white transition hover:border-[#ff4d9d] hover:text-[#ff4d9d] disabled:opacity-30"
+        {status === 'sent' ? (
+          <div
+            ref={resultRef}
+            role="status"
+            className="mt-12 rounded-3xl border border-[#ff4d9d]/40 bg-black/40 p-8 text-center backdrop-blur-md sm:p-12"
+          >
+            <Check size={28} className="mx-auto text-[#ff83ba]" />
+            <h3 className="mt-4 font-serif text-3xl text-white">
+              ¡Nos vemos en la fiesta!
+            </h3>
+            <p className="mt-3 text-base leading-relaxed text-white/80">
+              Tu confirmación quedó registrada. ¡Gracias!
+            </p>
+            <button
+              type="button"
+              onClick={resetForm}
+              className="mt-8 inline-flex min-h-12 items-center justify-center rounded-full bg-[#ff2a85] px-10 text-xs font-bold uppercase tracking-[0.2em] text-white transition-colors hover:bg-[#ff4d9d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4d9d] focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+            >
+              Aceptar
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="mt-12 space-y-6">
+            <Reveal>
+              <div className="rounded-3xl border border-white/10 bg-black/40 p-6 text-center backdrop-blur-md sm:p-8">
+                <p
+                  id="guest-count-label"
+                  className="text-xs font-semibold uppercase tracking-[0.2em] text-[#ff9fc8]"
                 >
-                  <Minus size={16} />
-                </button>
-                <span className="font-serif text-3xl text-white">
-                  {guestCount}
-                </span>
-                <button
-                  onClick={() => handleGuestCountChange(1)}
-                  disabled={guestCount >= 5}
-                  className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 text-white transition hover:border-[#ff4d9d] hover:text-[#ff4d9d] disabled:opacity-30"
+                  ¿Cuántas personas confirman?
+                </p>
+                <div
+                  role="group"
+                  aria-labelledby="guest-count-label"
+                  className="mt-6 flex items-center justify-center gap-6"
                 >
-                  <Plus size={16} />
-                </button>
-              </div>
-            </div>
-          </Reveal>
-
-          {guests.map((g, i) => (
-            <Reveal key={i}>
-              <div className="rounded-3xl border border-white/10 bg-black/40 p-6 backdrop-blur-md sm:p-8">
-                <div className="mb-6 flex items-center gap-2 border-b border-white/10 pb-4">
-                  <User size={16} className="text-[#ff4d9d]" />
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70">
-                    Invitado {i + 1}
+                  <button
+                    type="button"
+                    onClick={() => handleGuestCountChange(-1)}
+                    disabled={guests.length <= 1}
+                    aria-label="Quitar una persona"
+                    className="flex h-11 w-11 items-center justify-center rounded-full border border-white/30 text-white transition hover:border-[#ff4d9d] hover:text-[#ff4d9d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4d9d] disabled:opacity-30"
+                  >
+                    <Minus size={16} />
+                  </button>
+                  <span aria-live="polite" className="font-serif text-3xl text-white">
+                    {guests.length}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => handleGuestCountChange(1)}
+                    disabled={guests.length >= MAX_GUESTS}
+                    aria-label="Agregar una persona"
+                    className="flex h-11 w-11 items-center justify-center rounded-full border border-white/30 text-white transition hover:border-[#ff4d9d] hover:text-[#ff4d9d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4d9d] disabled:opacity-30"
+                  >
+                    <Plus size={16} />
+                  </button>
                 </div>
-
-                <div className="space-y-6">
-                  <div>
-                    <input
-                      type="text"
-                      placeholder="Nombre y Apellido"
-                      value={g.name}
-                      onChange={(e) => updateGuest(i, 'name', e.target.value)}
-                      className="w-full border-b border-white/20 bg-transparent py-2 text-white placeholder:text-white/30 focus:border-[#ff4d9d] focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-2 flex items-center gap-2 text-[9px] font-medium uppercase tracking-[0.2em] text-[#ff83ba]/80">
-                      <Utensils size={12} /> Restricción Alimentaria
-                    </label>
-                    <select
-                      value={g.dietary}
-                      onChange={(e) =>
-                        updateGuest(i, 'dietary', e.target.value)
-                      }
-                      className="w-full appearance-none border-b border-white/20 bg-transparent py-2 text-white focus:border-[#ff4d9d] focus:outline-none"
-                    >
-                      <option value="Ninguna" className="bg-[#080205]">
-                        Ninguna
-                      </option>
-                      <option value="Vegetariano/a" className="bg-[#080205]">
-                        Vegetariano/a
-                      </option>
-                      <option value="Vegano/a" className="bg-[#080205]">
-                        Vegano/a
-                      </option>
-                      <option value="Celíaco/a" className="bg-[#080205]">
-                        Celíaco/a
-                      </option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="mb-2 flex items-center gap-2 text-[9px] font-medium uppercase tracking-[0.2em] text-[#ff83ba]/80">
-                      <Music size={12} /> Canción que no puede faltar
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Título y Artista"
-                      value={g.song}
-                      onChange={(e) => updateGuest(i, 'song', e.target.value)}
-                      className="w-full border-b border-white/20 bg-transparent py-2 text-white placeholder:text-white/30 focus:border-[#ff4d9d] focus:outline-none"
-                    />
-                  </div>
-                </div>
+                <p className="mt-3 text-xs text-white/70">
+                  De 1 a {MAX_GUESTS} personas
+                </p>
               </div>
             </Reveal>
-          ))}
 
-          <Reveal className="mt-8 text-center">
-            <button
-              onClick={handleConfirm}
-              className="inline-flex w-full items-center justify-center gap-2.5 rounded-full bg-[#ff2a85] px-8 py-5 text-xs font-bold uppercase tracking-[0.2em] text-white shadow-[0_0_35px_rgba(255,42,133,0.35)] transition-all duration-300 hover:bg-[#ff4d9d] hover:shadow-[0_0_45px_rgba(255,77,157,0.5)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4d9d] sm:w-auto"
-            >
-              <MessageCircle size={18} />
-              Confirmar Asistencia
-            </button>
-          </Reveal>
-        </div>
+            {guests.map((guest, index) => (
+              <Reveal key={index}>
+                <fieldset className="rounded-3xl border border-white/10 bg-black/40 p-6 backdrop-blur-md sm:p-8">
+                  <legend className="sr-only">Invitado {index + 1}</legend>
+                  <div
+                    aria-hidden="true"
+                    className="mb-6 flex items-center gap-2 border-b border-white/10 pb-4"
+                  >
+                    <User size={16} className="text-[#ff4d9d]" />
+                    <span className="text-xs font-semibold uppercase tracking-[0.2em] text-white/80">
+                      Invitado {index + 1}
+                    </span>
+                  </div>
+
+                  <div className="space-y-6">
+                    <div>
+                      <label htmlFor={`guest-${index}-name`} className={FIELD_LABEL_STYLES}>
+                        <User size={12} /> Nombre y apellido
+                      </label>
+                      <input
+                        id={`guest-${index}-name`}
+                        type="text"
+                        required
+                        pattern=".*\S.*"
+                        title="Escribí el nombre y apellido"
+                        maxLength={MAX_NAME_LENGTH}
+                        autoComplete="off"
+                        value={guest.name}
+                        onChange={(event) => updateGuest(index, 'name', event.target.value)}
+                        className={FIELD_STYLES}
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor={`guest-${index}-type`} className={FIELD_LABEL_STYLES}>
+                        <Ticket size={12} /> Tipo de invitación
+                      </label>
+                      <select
+                        id={`guest-${index}-type`}
+                        value={guest.type}
+                        onChange={(event) =>
+                          updateGuest(index, 'type', event.target.value as GuestType)
+                        }
+                        className={FIELD_STYLES}
+                      >
+                        {Object.entries(GUEST_TYPE_LABELS).map(([value, label]) => (
+                          <option key={value} value={value} className="bg-[#080205]">
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label htmlFor={`guest-${index}-dietary`} className={FIELD_LABEL_STYLES}>
+                        <Utensils size={12} /> Restricción alimentaria
+                      </label>
+                      <select
+                        id={`guest-${index}-dietary`}
+                        value={guest.dietary}
+                        onChange={(event) => updateGuest(index, 'dietary', event.target.value)}
+                        className={FIELD_STYLES}
+                      >
+                        {DIETARY_OPTIONS.map((option) => (
+                          <option key={option} value={option} className="bg-[#080205]">
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </fieldset>
+              </Reveal>
+            ))}
+
+            <Reveal>
+              <div className="rounded-3xl border border-white/10 bg-black/40 p-6 backdrop-blur-md sm:p-8">
+                <label htmlFor="rsvp-notes" className={FIELD_LABEL_STYLES}>
+                  <NotebookPen size={12} /> Notas (opcional)
+                </label>
+                <textarea
+                  id="rsvp-notes"
+                  rows={3}
+                  maxLength={MAX_NOTES_LENGTH}
+                  placeholder="¿Algo que quieras avisar?"
+                  value={notes}
+                  onChange={(event) => setNotes(event.target.value)}
+                  className={`${FIELD_STYLES} resize-y`}
+                />
+              </div>
+            </Reveal>
+
+            {/* Trampa para robots: oculta para las personas y los lectores de pantalla. */}
+            <div aria-hidden="true" className="absolute -left-[9999px] h-px w-px overflow-hidden">
+              <label htmlFor="rsvp-website">No completar este campo</label>
+              <input
+                id="rsvp-website"
+                name="website"
+                type="text"
+                tabIndex={-1}
+                autoComplete="off"
+                value={website}
+                onChange={(event) => setWebsite(event.target.value)}
+              />
+            </div>
+
+            {error && (
+              <p
+                role="alert"
+                data-error
+                className="rounded-2xl border border-[#ff4d9d]/50 bg-[#4a041f]/40 p-4 text-center text-base text-white"
+              >
+                {error}
+              </p>
+            )}
+
+            <div className="mt-8 text-center">
+              <button
+                type="submit"
+                disabled={status === 'sending'}
+                className="inline-flex min-h-12 w-full items-center justify-center gap-2.5 rounded-full bg-[#ff2a85] px-8 py-5 text-xs font-bold uppercase tracking-[0.2em] text-white shadow-[0_0_35px_rgba(255,42,133,0.35)] transition-all duration-300 hover:bg-[#ff4d9d] hover:shadow-[0_0_45px_rgba(255,77,157,0.5)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4d9d] disabled:opacity-70 sm:w-auto"
+              >
+                <Check size={18} />
+                {status === 'sending' ? 'Guardando…' : 'Confirmar asistencia'}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </section>
   )
@@ -710,6 +999,7 @@ export function Invitation() {
         <Hero />
         <Quote />
         <EventDetails />
+        <CardPrices />
         <Gallery />
         <Gifts />
         <Rsvp />

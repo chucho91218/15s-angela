@@ -53,7 +53,8 @@
     },
     "onlyBuiltDependencies": [
       "esbuild",
-      "workerd"
+      "workerd",
+      "koffi"
     ]
   }
 }

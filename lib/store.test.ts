@@ -9,7 +9,7 @@ import {
   saveConfirmation,
 } from './confirmations.ts'
 import { clearAttempts, clientId, registerAttempt } from './rate-limit.ts'
-import { createFileStore } from './store.ts'
+import { createFileStore, createR2Store, type R2BucketLike } from './store.ts'
 
 async function tempRoot(t: TestContext) {
   const root = await mkdtemp(join(tmpdir(), 'rsvp-store-'))
@@ -187,4 +187,89 @@ test('sin Cloudflare usa la primera dirección reenviada', () => {
 
 test('sin cabeceras agrupa a todos bajo un mismo identificador', () => {
   assert.equal(clientId(new Headers()), 'desconocido')
+})
+
+// Imita lo que usa el store de R2, incluido el paginado de list().
+function fakeBucket(pageSize = 1000) {
+  const objects = new Map<string, string>()
+  const bucket: R2BucketLike = {
+    async get(key) {
+      const body = objects.get(key)
+      return body === undefined ? null : { text: async () => body }
+    },
+    async put(key, value) {
+      objects.set(key, value)
+    },
+    async delete(key) {
+      objects.delete(key)
+    },
+    async list({ prefix, cursor, delimiter }) {
+      const keys = [...objects.keys()]
+        .filter((key) => key.startsWith(prefix))
+        .filter((key) => !delimiter || !key.slice(prefix.length).includes(delimiter))
+        .sort()
+      const start = Number(cursor ?? 0)
+      const end = start + pageSize
+      const truncated = end < keys.length
+      return {
+        objects: keys.slice(start, end).map((key) => ({ key })),
+        truncated,
+        ...(truncated ? { cursor: String(end) } : {}),
+      }
+    },
+  }
+  return { bucket, objects }
+}
+
+test('R2: guarda y recupera un valor', async () => {
+  const store = createR2Store(() => fakeBucket().bucket)
+  const { bucket } = fakeBucket()
+  const sameBucket = createR2Store(() => bucket)
+  await sameBucket.put('confirmations/uno.json', { a: 1 })
+  assert.deepEqual(await sameBucket.get('confirmations/uno.json'), { a: 1 })
+  assert.equal(await store.get('confirmations/nada.json'), null)
+})
+
+test('R2: lista todas las páginas y solo los .json directos del prefijo', async () => {
+  const { bucket, objects } = fakeBucket(2)
+  const store = createR2Store(() => bucket)
+  for (const name of ['a', 'b', 'c', 'd', 'e']) {
+    await store.put(`confirmations/${name}.json`, {})
+  }
+  objects.set('confirmations/otro.txt', '{}')
+  objects.set('confirmations/sub/f.json', '{}')
+  objects.set('rate/g.json', '{}')
+
+  assert.deepEqual((await store.list('confirmations')).sort(), [
+    'confirmations/a.json',
+    'confirmations/b.json',
+    'confirmations/c.json',
+    'confirmations/d.json',
+    'confirmations/e.json',
+  ])
+})
+
+test('R2: borra un valor y borrar uno inexistente no falla', async () => {
+  const { bucket } = fakeBucket()
+  const store = createR2Store(() => bucket)
+  await store.put('confirmations/uno.json', { a: 1 })
+  await store.del('confirmations/uno.json')
+  await store.del('confirmations/uno.json')
+  assert.equal(await store.get('confirmations/uno.json'), null)
+})
+
+test('R2: rechaza claves y prefijos inválidos', async () => {
+  const store = createR2Store(() => fakeBucket().bucket)
+  await assert.rejects(store.get('../secreto.json'), /inválida/)
+  await assert.rejects(store.put('confirmations/uno.txt', {}), /inválida/)
+  await assert.rejects(store.list('../otro'), /inválido/)
+})
+
+test('R2: funciona con las operaciones de confirmaciones', async () => {
+  const { bucket } = fakeBucket()
+  const store = createR2Store(() => bucket)
+  const saved = await saveConfirmation(store, { guests: [] } as never)
+  assert.deepEqual((await listConfirmations(store)).map(({ id }) => id), [saved.id])
+  assert.equal(await deleteConfirmation(store, saved.id), true)
+  assert.deepEqual(await listConfirmations(store), [])
 })

@@ -36,12 +36,12 @@ import {
 } from '@/lib/rsvp'
 
 const photos = [
-  'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=900&q=85',
-  'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=900&q=85',
-  'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=900&q=85',
-  'https://images.unsplash.com/photo-1506157786151-b8491531f063?auto=format&fit=crop&w=900&q=85',
-  'https://images.unsplash.com/photo-1524368535928-5b5e00ddc76b?auto=format&fit=crop&w=900&q=85',
-  'https://images.unsplash.com/photo-1521337581100-8ca9a73a5f79?auto=format&fit=crop&w=900&q=85',
+  '/1.jpeg',
+  '/2.jpeg',
+  '/3.jpeg',
+  '/4.jpeg',
+  '/5.jpeg',
+  '/6.jpeg',
 ]
 
 function Reveal({
@@ -117,10 +117,6 @@ function loadYouTubeApi() {
   return youTubeApi
 }
 
-// DEBT: música servida por YouTube porque no hay un archivo con licencia para alojar.
-// Techo: el reproductor va oculto (YouTube pide que sea visible), puede mostrar
-// publicidad y iOS puede bloquear el inicio. Camino de upgrade: con un MP3 propio,
-// volver a un elemento <audio> y borrar este reproductor.
 export function FloatingAudio({ entered }: { entered: boolean }) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [unavailable, setUnavailable] = useState(false)
@@ -132,7 +128,6 @@ export function FloatingAudio({ entered }: { entered: boolean }) {
 
     let cancelled = false
     let player: YouTubePlayer | undefined
-    // YouTube reemplaza este elemento por su iframe, así que React no debe manejarlo.
     const host = document.createElement('div')
     containerRef.current?.appendChild(host)
 
@@ -423,7 +418,7 @@ export function Quote() {
 
 const details = [
   { icon: CalendarDays, label: 'Fecha', value: 'Lunes 7 de Diciembre 2026' },
-  { icon: Clock3, label: 'Horario', value: '21:30 hs.' },
+  { icon: Clock3, label: 'Horario', value: '21:30 hs. (Cena) • 01:30 hs. (Brindis)' },
   {
     icon: Sparkles,
     label: 'Dress code',
@@ -497,7 +492,7 @@ export function EventDetails() {
 const cardPrices = [
   { label: 'Mayores', value: '$75.000' },
   { label: 'Adolescentes', value: '$45.000' },
-  { label: 'Menores', value: '$35.000' },
+  { label: 'Menores (-12)', value: '$35.000' },
   { label: 'Brindis', value: '$30.000' },
 ]
 
@@ -691,7 +686,6 @@ export function Rsvp() {
     setWebsite('')
     setError('')
     setStatus('idle')
-    // Se enfoca la sección y no un campo, para que no se abra el teclado del celular.
     sectionRef.current?.focus({ preventScroll: true })
     sectionRef.current?.scrollIntoView({ block: 'start' })
   }
@@ -912,7 +906,6 @@ export function Rsvp() {
               </div>
             </Reveal>
 
-            {/* Trampa para robots: oculta para las personas y los lectores de pantalla. */}
             <div aria-hidden="true" className="absolute -left-[9999px] h-px w-px overflow-hidden">
               <label htmlFor="rsvp-website">No completar este campo</label>
               <input

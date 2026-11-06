@@ -6,4 +6,5 @@ minimumReleaseAgeExclude:
 
 allowBuilds:
   esbuild: false
+  koffi: true
   workerd: true

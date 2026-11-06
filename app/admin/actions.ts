@@ -31,7 +31,7 @@ export async function login(_previous: LoginState, formData: FormData): Promise<
   if (!attempt.allowed) {
     const minutes = Math.ceil(attempt.retryAfterMs / 60000)
     return {
-      error: `Demasiados intentos. Probá de nuevo en ${minutes} ${minutes === 1 ? 'minuto' : 'minutos'}.`,
+      error: `Demasiados intentos. Probá de nuevo En ${minutes} ${minutes === 1 ? 'minuto' : 'minutos'}.`,
     }
   }
 

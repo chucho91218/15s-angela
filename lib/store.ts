@@ -65,8 +65,79 @@ export function createFileStore(root: string): Store {
   }
 }
 
-// DEBT: archivos en disco, sin base de datos. Techo: en Cloudflare Workers el disco
-// no persiste. Camino de upgrade: implementar esta misma interfaz Store sobre R2.
-export const store = createFileStore(
+export type R2BucketLike = {
+  get(key: string): Promise<{ text(): Promise<string> } | null>
+  put(key: string, value: string): Promise<unknown>
+  delete(key: string): Promise<void>
+  list(options: { prefix: string; cursor?: string; delimiter?: string }): Promise<{
+    objects: { key: string }[]
+    truncated: boolean
+    cursor?: string
+  }>
+}
+
+function assertValidPrefix(prefix: string) {
+  if (!VALID_PREFIX.test(prefix)) {
+    throw new Error('Prefijo de almacenamiento inválido')
+  }
+}
+
+export function createR2Store(
+  getBucket: () => R2BucketLike | Promise<R2BucketLike>,
+): Store {
+  return {
+    async get<T>(key: string) {
+      assertValidKey(key)
+      const object = await (await getBucket()).get(key)
+      return object ? (JSON.parse(await object.text()) as T) : null
+    },
+
+    async put(key, value) {
+      assertValidKey(key)
+      await (await getBucket()).put(key, JSON.stringify(value))
+    },
+
+    async list(prefix) {
+      assertValidPrefix(prefix)
+      const bucket = await getBucket()
+      const keys: string[] = []
+      let cursor: string | undefined
+      do {
+        const page = await bucket.list({ prefix: `${prefix}/`, delimiter: '/', cursor })
+        keys.push(...page.objects.map(({ key }) => key).filter((key) => key.endsWith('.json')))
+        cursor = page.truncated ? page.cursor : undefined
+      } while (cursor)
+      return keys
+    },
+
+    async del(key) {
+      assertValidKey(key)
+      await (await getBucket()).delete(key)
+    },
+  }
+}
+
+async function getCloudflareBucket() {
+  const { getCloudflareContext } = await import('@opennextjs/cloudflare')
+  const { RSVP_BUCKET } = getCloudflareContext().env as unknown as {
+    RSVP_BUCKET?: R2BucketLike
+  }
+  if (!RSVP_BUCKET) throw new Error('Falta el bucket RSVP_BUCKET en Cloudflare')
+  return RSVP_BUCKET
+}
+
+const cloudflareStore = createR2Store(getCloudflareBucket)
+const fileStore = createFileStore(
   process.env.RSVP_DATA_DIR ?? join(/*turbopackIgnore: true*/ process.cwd(), 'data'),
 )
+
+// Se decide en cada llamada: en Workers las variables llegan recién con el pedido.
+// El disco no persiste en Workers; allí se guarda en R2 (ver wrangler.jsonc).
+const current = () => (process.env.RSVP_STORE === 'r2' ? cloudflareStore : fileStore)
+
+export const store: Store = {
+  get: (key) => current().get(key),
+  put: (key, value) => current().put(key, value),
+  list: (prefix) => current().list(prefix),
+  del: (key) => current().del(key),
+}

@@ -22,12 +22,22 @@ export const GUEST_TYPE_LABELS = {
   menor: 'Menor (hasta 12 años)',
 } as const
 
+// Nueva constante para Cena o Brindis
+export const ASSISTANCE_TYPE_LABELS = {
+  cena: 'Cena (21:30 hs)',
+  brindis: 'Brindis (01:30 hs)',
+} as const
+
 export type GuestType = keyof typeof GUEST_TYPE_LABELS
-export type Guest = { name: string; type: GuestType; dietary: string }
+export type AssistanceType = keyof typeof ASSISTANCE_TYPE_LABELS // Nuevo tipo
+
+// Agregamos assistance a Guest
+export type Guest = { name: string; type: GuestType; dietary: string; assistance: AssistanceType }
 export type NewConfirmation = { guests: Guest[]; notes: string }
 export type Confirmation = NewConfirmation & { id: string; createdAt: string }
 export type FilteredConfirmation = Confirmation & { totalGuests: number }
-export type Filters = { q?: string; type?: string; dietary?: string }
+// Agregamos assistance a los filtros
+export type Filters = { q?: string; type?: string; dietary?: string; assistance?: string }
 
 type ParseResult =
   | { ok: true; value: NewConfirmation }
@@ -55,6 +65,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isGuestType(value: unknown): value is GuestType {
   return value === 'mayor' || value === 'menor'
+}
+
+function isAssistanceType(value: unknown): value is AssistanceType {
+  return value === 'cena' || value === 'brindis'
 }
 
 // Frontera de confianza: todo lo que llega del formulario público pasa por acá.
@@ -85,10 +99,13 @@ export function parseConfirmation(input: unknown): ParseResult {
     if (!isGuestType(raw.type)) {
       return { ok: false, error: `Elegí el tipo de invitación de la persona ${person}.` }
     }
+    if (!isAssistanceType(raw.assistance)) {
+        return { ok: false, error: `Elegí la asistencia (Cena o Brindis) de la persona ${person}.` }
+    }
     if (typeof raw.dietary !== 'string' || !DIETARY_OPTIONS.includes(raw.dietary)) {
       return { ok: false, error: `Elegí la restricción de la persona ${person}.` }
     }
-    guests.push({ name, type: raw.type, dietary: raw.dietary })
+    guests.push({ name, type: raw.type, dietary: raw.dietary, assistance: raw.assistance })
   }
 
   if (input.notes !== undefined && typeof input.notes !== 'string') {
@@ -129,6 +146,9 @@ export function summarize(list: Confirmation[]) {
     adults: guests.filter((guest) => guest.type === 'mayor').length,
     minors: guests.filter((guest) => guest.type === 'menor').length,
     withRestriction: guests.filter((guest) => guest.dietary !== NO_RESTRICTION).length,
+    // Agregamos contadores para el resumen si se necesitan
+    dinner: guests.filter((guest) => guest.assistance === 'cena').length,
+    toast: guests.filter((guest) => guest.assistance === 'brindis').length,
   }
 }
 
@@ -148,13 +168,14 @@ function matchesDietary(guest: Guest, dietary: string | undefined) {
 
 export function filterConfirmations<T extends Confirmation>(
   list: T[],
-  { q = '', type = '', dietary = '' }: Filters,
+  { q = '', type = '', dietary = '', assistance = '' }: Filters,
 ): (T & { totalGuests: number })[] {
   const search = normalizeSearch(q)
   return list.flatMap((confirmation) => {
     const guests = confirmation.guests.filter(
       (guest) =>
         (!type || guest.type === type) &&
+        (!assistance || guest.assistance === assistance) &&
         matchesDietary(guest, dietary) &&
         (!search || normalizeSearch(guest.name).includes(search)),
     )

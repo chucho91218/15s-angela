@@ -10,13 +10,15 @@ import {
   type Confirmation,
   type Guest,
   type GuestType,
+  type AssistanceType, // <--- Importamos esto
 } from '@/lib/rsvp'
 
 type PanelConfirmation = Confirmation & { dateLabel: string }
 type VisibleConfirmation = PanelConfirmation & { totalGuests: number }
 
-const NO_FILTERS = { q: '', type: '', dietary: '' }
+const NO_FILTERS = { q: '', type: '', dietary: '', assistance: '' }
 const SHORT_TYPE: Record<GuestType, string> = { mayor: 'Mayor', menor: 'Menor' }
+const SHORT_ASSISTANCE: Record<AssistanceType, string> = { cena: 'Cena', brindis: 'Brindis' } // Nuevo mapa
 
 const CONTROL_STYLES =
   'min-h-11 w-full rounded-lg border-2 border-[#14110f] bg-[#fffdf8] px-3 text-base text-[#14110f] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#14110f] focus-visible:ring-offset-2 focus-visible:ring-offset-[#f5efe3]'
@@ -30,6 +32,14 @@ function GuestType({ guest }: { guest: Guest }) {
     <strong className="font-bold">{SHORT_TYPE.menor}</strong>
   ) : (
     <>{SHORT_TYPE.mayor}</>
+  )
+}
+
+function GuestAssistance({ guest }: { guest: Guest }) {
+  return guest.assistance === 'brindis' ? (
+    <strong className="font-bold text-[#8f1022]">{SHORT_ASSISTANCE.brindis}</strong>
+  ) : (
+    <>{SHORT_ASSISTANCE.cena}</>
   )
 }
 
@@ -97,11 +107,12 @@ function PhoneTable({
       <colgroup>
         <col />
         <col className="w-[66px]" />
-        <col className="w-[38%]" />
+        <col className="w-[70px]" />
+        <col className="w-[30%]" />
       </colgroup>
       <thead className="bg-[#e7ddc9]">
         <tr>
-          {['Nombre', 'Tipo', 'Restricción'].map((title) => (
+          {['Nombre', 'Tipo', 'Asist.', 'Restricción'].map((title) => (
             <th key={title} scope="col" className="px-2 py-2.5 text-left text-[13px] font-bold">
               {title}
             </th>
@@ -115,7 +126,7 @@ function PhoneTable({
             <tr>
               <th
                 scope="rowgroup"
-                colSpan={3}
+                colSpan={4} // Actualizado a 4 columnas
                 className="border-t-2 border-[#14110f] bg-[#efe6d4] px-2 py-1.5 text-left font-normal"
               >
                 <div className="flex items-center justify-between gap-2">
@@ -137,6 +148,9 @@ function PhoneTable({
                 <td className="whitespace-nowrap px-2 py-2.5">
                   <GuestType guest={guest} />
                 </td>
+                <td className="whitespace-nowrap px-2 py-2.5">
+                  <GuestAssistance guest={guest} />
+                </td>
                 <td className="break-words px-2 py-2.5">
                   <GuestDietary guest={guest} />
                 </td>
@@ -144,7 +158,7 @@ function PhoneTable({
             ))}
             {confirmation.notes && (
               <tr className="border-t border-[#b9ad97]">
-                <td colSpan={3} className="whitespace-pre-line break-words px-2 py-2.5 text-[14px]">
+                <td colSpan={4} className="whitespace-pre-line break-words px-2 py-2.5 text-[14px]">
                   <strong className="font-bold">Notas:</strong> {confirmation.notes}
                 </td>
               </tr>
@@ -168,7 +182,8 @@ function DesktopTable({
       <colgroup>
         <col className="w-[164px]" />
         <col className="w-[96px]" />
-        <col className="w-[24%]" />
+        <col className="w-[20%]" />
+        <col className="w-[84px]" />
         <col className="w-[84px]" />
         <col className="w-[18%]" />
         <col />
@@ -176,7 +191,7 @@ function DesktopTable({
       </colgroup>
       <thead className="bg-[#e7ddc9]">
         <tr>
-          {['Fecha', 'Personas', 'Nombre', 'Tipo', 'Restricción', 'Notas'].map((title) => (
+          {['Fecha', 'Personas', 'Nombre', 'Tipo', 'Asistencia', 'Restricción', 'Notas'].map((title) => (
             <th key={title} scope="col" className="px-3 py-3 text-left text-[13px] font-bold">
               {title}
             </th>
@@ -212,6 +227,9 @@ function DesktopTable({
                 <td className="px-3 py-2.5">
                   <GuestType guest={guest} />
                 </td>
+                <td className="px-3 py-2.5">
+                  <GuestAssistance guest={guest} />
+                </td>
                 <td className="break-words px-3 py-2.5">
                   <GuestDietary guest={guest} />
                 </td>
@@ -242,7 +260,7 @@ export function GuestPanel({
   summary,
 }: {
   confirmations: PanelConfirmation[]
-  summary: { people: number; adults: number; minors: number; withRestriction: number }
+  summary: { people: number; adults: number; minors: number; withRestriction: number; dinner: number; toast: number } // Añadimos cena y brindis al resumen
 }) {
   const [filters, setFilters] = useState(NO_FILTERS)
   const [error, setError] = useState('')
@@ -252,14 +270,15 @@ export function GuestPanel({
     [confirmations, filters],
   )
   const shownPeople = list.reduce((total, item) => total + item.guests.length, 0)
-  const isFiltering = Boolean(filters.q.trim() || filters.type || filters.dietary)
+  const isFiltering = Boolean(filters.q.trim() || filters.type || filters.dietary || filters.assistance)
   const updateFilter = (field: keyof typeof NO_FILTERS, value: string) =>
     setFilters((current) => ({ ...current, [field]: value }))
 
+  // Actualizamos las estadísticas
   const stats = [
-    { label: 'Personas', value: summary.people },
-    { label: 'Mayores', value: summary.adults },
-    { label: 'Menores', value: summary.minors },
+    { label: 'Total', value: summary.people },
+    { label: 'Cena', value: summary.dinner },
+    { label: 'Brindis', value: summary.toast },
     { label: 'Con restricción', value: summary.withRestriction },
   ]
 
@@ -292,10 +311,10 @@ export function GuestPanel({
         ))}
       </dl>
 
-      <section aria-label="Filtros" className="mt-4 grid gap-3 md:grid-cols-[2fr_1fr_1fr_auto] md:items-end">
+      <section aria-label="Filtros" className="mt-4 grid gap-3 md:grid-cols-[1fr_auto_auto_auto_auto] md:items-end">
         <div>
           <label htmlFor="filter-q" className="mb-1 block text-[14px] font-semibold">
-            Buscar por nombre
+            Buscar
           </label>
           <input
             id="filter-q"
@@ -321,6 +340,21 @@ export function GuestPanel({
           </select>
         </div>
         <div>
+          <label htmlFor="filter-assistance" className="mb-1 block text-[14px] font-semibold">
+            Asistencia
+          </label>
+          <select
+            id="filter-assistance"
+            value={filters.assistance}
+            onChange={(event) => updateFilter('assistance', event.target.value)}
+            className={CONTROL_STYLES}
+          >
+            <option value="">Todas</option>
+            <option value="cena">Solo Cena</option>
+            <option value="brindis">Solo Brindis</option>
+          </select>
+        </div>
+        <div>
           <label htmlFor="filter-dietary" className="mb-1 block text-[14px] font-semibold">
             Restricción
           </label>
@@ -343,7 +377,7 @@ export function GuestPanel({
           href={`/admin/export?${new URLSearchParams(filters)}`}
           className={BUTTON_STYLES}
         >
-          {isFiltering ? 'Exportar lo filtrado' : 'Exportar lista'}
+          Exportar
         </a>
       </section>
 

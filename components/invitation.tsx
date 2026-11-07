@@ -27,12 +27,14 @@ import { submitConfirmation } from '@/app/actions'
 import {
   DIETARY_OPTIONS,
   GUEST_TYPE_LABELS,
+  ASSISTANCE_TYPE_LABELS,
   MAX_GUESTS,
   MAX_NAME_LENGTH,
   MAX_NOTES_LENGTH,
   NO_RESTRICTION,
   type Guest,
   type GuestType,
+  type AssistanceType,
 } from '@/lib/rsvp'
 
 const photos = [
@@ -725,6 +727,7 @@ export function Gifts() {
 const emptyGuest = (): Guest => ({
   name: '',
   type: 'mayor',
+  assistance: 'cena',
   dietary: NO_RESTRICTION,
 })
 
@@ -928,6 +931,26 @@ export function Rsvp() {
                         className={FIELD_STYLES}
                       >
                         {Object.entries(GUEST_TYPE_LABELS).map(([value, label]) => (
+                          <option key={value} value={value} className="bg-[#080205]">
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label htmlFor={`guest-${index}-assistance`} className={FIELD_LABEL_STYLES}>
+                        <Clock3 size={12} /> Asistencia
+                      </label>
+                      <select
+                        id={`guest-${index}-assistance`}
+                        value={guest.assistance}
+                        onChange={(event) =>
+                          updateGuest(index, 'assistance', event.target.value as AssistanceType)
+                        }
+                        className={FIELD_STYLES}
+                      >
+                        {Object.entries(ASSISTANCE_TYPE_LABELS).map(([value, label]) => (
                           <option key={value} value={value} className="bg-[#080205]">
                             {label}
                           </option>

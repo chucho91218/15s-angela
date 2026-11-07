@@ -497,6 +497,16 @@ const cardPrices = [
 ]
 
 export function CardPrices() {
+  const [showBankDetails, setShowBankDetails] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const alias = 'dsanchezeventos'
+
+  const copyAlias = async () => {
+    await navigator.clipboard.writeText(alias)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 2200)
+  }
+
   return (
     <section className="px-6 py-24 sm:py-36">
       <div className="mx-auto max-w-xl">
@@ -510,18 +520,76 @@ export function CardPrices() {
         </Reveal>
 
         <Reveal className="mt-12">
-          <dl className="rounded-3xl border border-white/10 bg-black/40 px-6 backdrop-blur-md sm:px-8">
-            {cardPrices.map(({ label, value }) => (
-              <div
-                key={label}
-                data-card-price
-                className="flex items-baseline justify-between gap-4 border-b border-white/10 py-5 last:border-b-0"
+          <div className="rounded-3xl border border-white/10 bg-black/40 px-6 py-8 backdrop-blur-md sm:px-8">
+            <dl>
+              {cardPrices.map(({ label, value }) => (
+                <div
+                  key={label}
+                  data-card-price
+                  className="flex items-baseline justify-between gap-4 border-b border-white/10 pb-5 pt-5 first:pt-0"
+                >
+                  <dt className="text-base text-white/85">{label}</dt>
+                  <dd className="font-serif text-2xl text-white sm:text-3xl">{value}</dd>
+                </div>
+              ))}
+            </dl>
+
+            <div className="mt-8 text-center">
+              <p className="text-xs font-medium uppercase tracking-[0.2em] text-[#ff9fc8]">
+                Podés confirmar hasta el
+              </p>
+              <p className="mt-2 font-serif text-2xl text-white">Jueves 5/11</p>
+            </div>
+
+            <div className="mt-8">
+              <button
+                onClick={() => setShowBankDetails(!showBankDetails)}
+                className="flex w-full items-center justify-center gap-3 rounded-full border border-[#ff4d9d]/60 bg-[#ff2a85]/10 px-6 py-4 text-xs font-bold uppercase tracking-[0.2em] text-white transition-all duration-300 hover:bg-[#ff2a85] hover:shadow-[0_0_20px_rgba(255,42,133,0.3)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4d9d]"
               >
-                <dt className="text-base text-white/85">{label}</dt>
-                <dd className="font-serif text-2xl text-white sm:text-3xl">{value}</dd>
-              </div>
-            ))}
-          </dl>
+                Ver datos de transferencia
+                {showBankDetails ? <Minus size={14} /> : <Plus size={14} />}
+              </button>
+
+              <AnimatePresence>
+                {showBankDetails && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="mt-4 rounded-2xl border border-[#ff4d9d]/20 bg-[#12030a]/70 p-6 text-center text-sm leading-relaxed text-white/80">
+                      <p className="mb-3 flex items-center justify-center gap-2">
+                        Alias: <strong className="font-mono text-base tracking-wider text-white">{alias}</strong>
+                        <button
+                          onClick={copyAlias}
+                          className="inline-flex items-center justify-center rounded-full bg-white/10 p-1.5 text-white transition hover:bg-white/20"
+                          title="Copiar alias"
+                        >
+                          {copied ? <Check size={14} className="text-[#ff83ba]" /> : <Copy size={14} />}
+                        </button>
+                      </p>
+                      <p className="mb-3">
+                        CVU: <strong className="font-mono tracking-wider text-white">0000003100063759312679</strong>
+                      </p>
+                      <p>
+                        Titular: <strong className="text-white">Mariana Soledad Sanchez</strong>
+                      </p>
+
+                      <a
+                        href="https://wa.me/543573401462"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-6 flex w-full items-center justify-center gap-2.5 rounded-full bg-[#25D366] px-6 py-4 text-xs font-bold uppercase tracking-[0.2em] text-white shadow-[0_0_20px_rgba(37,211,102,0.25)] transition-all duration-300 hover:bg-[#20bd5a] hover:shadow-[0_0_30px_rgba(37,211,102,0.4)]"
+                      >
+                        Enviar comprobante
+                      </a>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
         </Reveal>
       </div>
     </section>
